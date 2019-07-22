@@ -1,0 +1,655 @@
+<html>
+<head>
+	
+<script type="text/javascript"
+<script src="//cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.js"></script>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="http://d3.min.js?v=3.2.8"></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/dygraph/2.1.0/dygraph.min.css" />
+
+	
+<script>
+
+
+	
+	(function() {
+/* global Dygraph:false */
+'use strict';
+
+var Dygraph;
+if (window.Dygraph) {
+  Dygraph = window.Dygraph;
+} else if (typeof(module) !== 'undefined') {
+  Dygraph = require('../dygraph');
+}
+
+var synchronize = function(/* dygraphs..., opts */) {
+  if (arguments.length === 0) {
+    throw 'Invalid invocation of Dygraph.synchronize(). Need >= 1 argument.';
+  }
+
+  var OPTIONS = ['selection', 'zoom', 'range'];
+  var opts = {
+    selection: true,
+    zoom: true,
+    range: true
+  };
+  var dygraphs = [];
+  var prevCallbacks = [];
+
+  var parseOpts = function(obj) {
+    if (!(obj instanceof Object)) {
+      throw 'Last argument must be either Dygraph or Object.';
+    } else {
+      for (var i = 0; i < OPTIONS.length; i++) {
+        var optName = OPTIONS[i];
+        if (obj.hasOwnProperty(optName)) opts[optName] = obj[optName];
+      }
+    }
+  };
+
+  if (arguments[0] instanceof Dygraph) {
+    // Arguments are Dygraph objects.
+    for (var i = 0; i < arguments.length; i++) {
+      if (arguments[i] instanceof Dygraph) {
+        dygraphs.push(arguments[i]);
+      } else {
+        break;
+      }
+    }
+    if (i < arguments.length - 1) {
+      throw 'Invalid invocation of Dygraph.synchronize(). ' +
+            'All but the last argument must be Dygraph objects.';
+    } else if (i == arguments.length - 1) {
+      parseOpts(arguments[arguments.length - 1]);
+    }
+  } else if (arguments[0].length) {
+    // Invoked w/ list of dygraphs, options
+    for (var i = 0; i < arguments[0].length; i++) {
+      dygraphs.push(arguments[0][i]);
+    }
+    if (arguments.length == 2) {
+      parseOpts(arguments[1]);
+    } else if (arguments.length > 2) {
+      throw 'Invalid invocation of Dygraph.synchronize(). ' +
+            'Expected two arguments: array and optional options argument.';
+    }  // otherwise arguments.length == 1, which is fine.
+  } else {
+    throw 'Invalid invocation of Dygraph.synchronize(). ' +
+          'First parameter must be either Dygraph or list of Dygraphs.';
+  }
+
+  if (dygraphs.length < 2) {
+    throw 'Invalid invocation of Dygraph.synchronize(). ' +
+          'Need two or more dygraphs to synchronize.';
+  }
+
+  var readycount = dygraphs.length;
+  for (var i = 0; i < dygraphs.length; i++) {
+    var g = dygraphs[i];
+    g.ready( function() {
+      if (--readycount == 0) {
+        // store original callbacks
+        var callBackTypes = ['drawCallback', 'highlightCallback', 'unhighlightCallback'];
+        for (var j = 0; j < dygraphs.length; j++) {
+          if (!prevCallbacks[j]) {
+            prevCallbacks[j] = {};
+          }
+          for (var k = callBackTypes.length - 1; k >= 0; k--) {
+            prevCallbacks[j][callBackTypes[k]] = dygraphs[j].getFunctionOption(callBackTypes[k]);
+          }
+        }
+
+        // Listen for draw, highlight, unhighlight callbacks.
+        if (opts.zoom) {
+          attachZoomHandlers(dygraphs, opts, prevCallbacks);
+        }
+
+        if (opts.selection) {
+          attachSelectionHandlers(dygraphs, prevCallbacks);
+        }
+      }
+    });
+  }
+
+  return {
+    detach: function() {
+      for (var i = 0; i < dygraphs.length; i++) {
+        var g = dygraphs[i];
+        if (opts.zoom) {
+          g.updateOptions({drawCallback: prevCallbacks[i].drawCallback});
+        }
+        if (opts.selection) {
+          g.updateOptions({
+            highlightCallback: prevCallbacks[i].highlightCallback,
+            unhighlightCallback: prevCallbacks[i].unhighlightCallback
+          });
+        }
+      }
+      // release references & make subsequent calls throw.
+      dygraphs = null;
+      opts = null;
+      prevCallbacks = null;
+    }
+  };
+};
+
+function arraysAreEqual(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  var i = a.length;
+  if (i !== b.length) return false;
+  while (i--) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function attachZoomHandlers(gs, syncOpts, prevCallbacks) {
+  var block = false;
+  for (var i = 0; i < gs.length; i++) {
+    var g = gs[i];
+    g.updateOptions({
+      drawCallback: function(me, initial) {
+        if (block || initial) return;
+        block = true;
+        var opts = {
+          dateWindow: me.xAxisRange()
+        };
+        if (syncOpts.range) opts.valueRange = me.yAxisRange();
+
+        for (var j = 0; j < gs.length; j++) {
+          if (gs[j] == me) {
+            if (prevCallbacks[j] && prevCallbacks[j].drawCallback) {
+              prevCallbacks[j].drawCallback.apply(this, arguments);
+            }
+            continue;
+          }
+
+          // Only redraw if there are new options
+          if (arraysAreEqual(opts.dateWindow, gs[j].getOption('dateWindow')) && 
+              arraysAreEqual(opts.valueRange, gs[j].getOption('valueRange'))) {
+            continue;
+          }
+
+          gs[j].updateOptions(opts);
+        }
+        block = false;
+      }
+    }, true /* no need to redraw */);
+  }
+}
+
+function attachSelectionHandlers(gs, prevCallbacks) {
+  var block = false;
+  for (var i = 0; i < gs.length; i++) {
+    var g = gs[i];
+
+    g.updateOptions({
+      highlightCallback: function(event, x, points, row, seriesName) {
+        if (block) return;
+        block = true;
+        var me = this;
+        for (var i = 0; i < gs.length; i++) {
+          if (me == gs[i]) {
+            if (prevCallbacks[i] && prevCallbacks[i].highlightCallback) {
+              prevCallbacks[i].highlightCallback.apply(this, arguments);
+            }
+            continue;
+          }
+          var idx = gs[i].getRowForX(x);
+          if (idx !== null) {
+            gs[i].setSelection(idx, seriesName);
+          }
+        }
+        block = false;
+      },
+      unhighlightCallback: function(event) {
+        if (block) return;
+        block = true;
+        var me = this;
+        for (var i = 0; i < gs.length; i++) {
+          if (me == gs[i]) {
+            if (prevCallbacks[i] && prevCallbacks[i].unhighlightCallback) {
+              prevCallbacks[i].unhighlightCallback.apply(this, arguments);
+            }
+            continue;
+          }
+          gs[i].clearSelection();
+        }
+        block = false;
+      }
+    }, true /* no need to redraw */);
+  }
+}
+
+Dygraph.synchronize = synchronize;
+
+})();
+	
+	</script>	
+	
+</head>
+<body>
+
+<h1><a href="mac_data.xlsx"></a></h1>
+<table width="1000">
+  <tbody>
+    <tr>
+      <td><div id="pos">Content</div></td>
+      <td><a href="mac_mkt_data.xlsx">Download market data</a></td>
+    </tr>
+    <tr>
+      <td width="600" rowspan="3"><div id="px"
+  style="width:600px; height:400px;"></div>
+      <p>&nbsp;</p>      <div id="trade_pnl"
+  style="width:600px; height:150px;"></div></td>
+      <td width="250" height="96"><div id="pnl"
+  style="width:400px; height:150px;"></div></td>
+    </tr>
+    <tr>
+      <td><div id="signal"
+  style="width:400px; height:150px;"></div></td>
+    </tr>
+    <tr>
+      <td><div id="EWMA Signal"
+  style="width:400px; height:150px;"></div></td>
+    </tr>
+    <tr>
+      <td><div id="rsi"
+  style="width:600px; height:150px;"></div></td>
+      <td><div id="rsi_sig"
+  style="width:400px; height:150px;"></div></td>
+    </tr>
+    <tr>
+      <td><div id="ob"
+  style="width:600px; height:150px;"></div></td>
+      <td><div id="ob_sig"
+  style="width:400px; height:150px;"></div></td>
+    </tr>
+    <tr>
+      <td><div id="tb"
+  style="width:600px; height:150px;">
+        
+      </div></td>
+      <td><div id="tb_sig"
+  style="width:400px; height:150px;"></div></td>
+    </tr>
+    <tr>
+      <td><div id="position"
+  style="width:600px; height:150px;"></div></td>
+      <td>&nbsp;</td>
+    </tr>
+    <tr>
+      <td>&nbsp;</td>
+      <td><textarea name="textarea" id="textarea" cols="45" rows="2"></textarea>
+      <textarea name="textarea2" id="textarea2" cols="45" rows="2"></textarea></td>
+    </tr>
+  </tbody>
+</table>
+
+<meta charset="utf-8">
+
+<p>
+  <style>
+            table {
+                border-collapse: collapse;
+                border: 2px black solid;
+                font: 12px sans-serif;
+            }
+            td {
+                border: 1px black solid;
+                padding: 5px;
+            }
+          </style>
+          
+<script type="text/javascript">
+	
+	var request = new XMLHttpRequest();
+		request.open('GET', 'mac_postion.json', true); // YOUR EXTERNAL JSON URL
+		console.log(request.stringify);
+	
+	var datafile = "mac_signals.csv";
+	
+	var g = new Dygraph(
+    document.getElementById("signal"),  
+    datafile, // path to CSV file
+		{
+			title: 'Signals',
+			titleHeight : 20,
+			valueRange: [-.4,.4],
+			visibility: [false, false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+			'Signal' : {
+				color : "black",
+				strokeWidth: 1,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+			
+		}
+	});
+	
+	var g2 = new Dygraph(
+    document.getElementById("px"),  
+    datafile, // path to CSV file
+		{
+			title: 'Prices and trades',
+			titleHeight : 20,
+			visibility: [true, true,false,true,false,true,true,false,false,false,false,false,false,false,true,true,false,false,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+			'buy_at' : {
+				color : "green",
+				strokeWidth: 0.1,
+				drawPoints: true,
+                pointSize: 4,
+                highlightCircleSize: 6
+			},
+			'sell_at' : {
+				color : "red",
+				strokeWidth: 0.1,
+				drawPoints: true,
+                pointSize: 4,
+                highlightCircleSize: 6
+			},
+			'bid_1': {
+				color : "red",
+				rollPeriod: 2,
+              	errorBars: true,
+				strokeWidth: 1 }
+			,
+			'bid_5': {
+				color : "red",
+				rollPeriod: 2,
+              	errorBars: true,
+				strokeWidth: 0.5 }
+			,
+			'ask_1': {
+				color : "green",
+				rollPeriod: 2,
+              	errorBars: true,
+				strokeWidth: 1 }
+			,
+			'ask_5': {
+				color : "green",
+				rollPeriod: 2,
+              	errorBars: true,
+				strokeWidth: 0.5 }
+		}
+	});
+			var g3 = new Dygraph(
+    			document.getElementById("ob"),  
+		datafile, // path to CSV file
+			{
+				title: 'MACD',
+				titleHeight : 20,
+				ylabel: '# of BTC',
+				visibility: [false, false,false,false,false,false,false,false,true,true,false,false,false,false,false,false,false,false,false,false,false,false,false],
+				strokeWidth: 1,
+				
+			series: {
+				
+				'buy_at' : {
+					color : "green",
+					strokeWidth: 0.1,
+					drawPoints: true,
+					pointSize: 4,
+					highlightCircleSize: 6
+				},
+				'sell_at' : {
+					color : "red",
+					strokeWidth: 0.1,
+					drawPoints: true,
+					pointSize: 4,
+					highlightCircleSize: 6
+				},
+				'EWMA': {
+					rollPeriod: 2,
+					errorBars: true,
+					strokeWidth: 3 }
+			}
+	});
+    var g4 = new Dygraph(
+    			document.getElementById("ob_sig"),  
+		datafile, // path to CSV file
+			{
+				title: 'Order Imbalance Signal',
+				titleHeight : 20,
+				valueRange: [-1,1],
+				visibility: [false, false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false],
+				strokeWidth: 1,
+				
+			series: {
+				
+				'OB Signal' : {
+					color : "green",
+					strokeWidth: 1,
+					drawPoints: false,
+					pointSize: 4,
+					highlightCircleSize: 6
+				}
+			}
+	});     
+	var g5 = new Dygraph(
+    document.getElementById("EWMA Signal"),  
+    datafile, // path to CSV file
+		{
+			title: 'EWMA Signal',
+			titleHeight : 20,
+			valueRange: [-.5,.5],
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+
+			'EWMA Signal' : {
+				color : "red",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	}); 
+			var g6 = new Dygraph(
+    document.getElementById("tb"),  
+    datafile, // path to CSV file
+		{
+			title: 'Total Volume',
+			titleHeight : 20,
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+
+			'Total Volume' : {
+				color : "brown",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+	var g7 = new Dygraph(
+    document.getElementById("tb_sig"),  
+    datafile, // path to CSV file
+		{
+			title: 'Total Imbalance Signal',
+			titleHeight : 20,
+			valueRange: [-1,1],
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+
+			'Trade Bal Signal' : {
+				color : "brown",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+	var g8 = new Dygraph(
+    document.getElementById("rsi"),  
+    datafile, // path to CSV file
+		{
+			title: 'RSI',
+			titleHeight : 20,
+			visibility:[false,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+
+			'RSI' : {
+				color : "blue",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+		var g9 = new Dygraph(
+    document.getElementById("rsi_sig"),  
+    datafile, // path to CSV file
+		{
+			title: 'RSI signal',
+			valueRange: [-.4,.4],
+			titleHeight : 20,
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+
+			'RSI Signal' : {
+				color : "blue",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+	var g10 = new Dygraph(
+    document.getElementById("pnl"),  
+    datafile, // path to CSV file
+		{
+			title: 'Running PnL',
+			titleHeight : 20,
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false],
+			strokeWidth: 1,
+		series: {
+
+			'Running PnL' : {
+				color : "blue",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+	var g11 = new Dygraph(
+    document.getElementById("trade_pnl"),  
+    datafile, // path to CSV file
+		{
+			title: 'Trade PnL',
+			titleHeight : 20,
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false],
+			strokeWidth: 1,
+		series: {
+
+			'Running PnL' : {
+				color : "blue",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+	var g12 = new Dygraph(
+    document.getElementById("position"),  
+    datafile, // path to CSV file
+		{
+			title: 'Position',
+			titleHeight : 20,
+			visibility:[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true],
+			strokeWidth: 1,
+		series: {
+
+			'Running PnL' : {
+				color : "blue",
+				strokeWidth: 0.5,
+				drawPoints: false,
+                pointSize: 4,
+                highlightCircleSize: 6
+			}
+
+		}
+	});
+	var sync = Dygraph.synchronize([g, g2, g3,g4,g5,g6,g7,g8,g9,g10,g11,g12],{
+		selection: true,
+		zoom: true,
+		range: false
+	});
+			  
+	</script>
+</p>
+        <script type="text/javascript"charset="utf-8">
+			
+			
+			let url = 'mac_position.json';
+
+fetch(url)
+.then(res => res.json())
+.then((out) => {
+	document.getElementById('textarea').innerHTML = JSON.stringify(out);
+	//myObj = JSON.parse(out);
+	//console.log(out);
+	//obj2 = JSON.parse(out);
+	//document.getElementById('textarea2').innerHTML = JSON.stringify(out);
+	//document.getElementById('position').innerHTML = out.position;
+	document.getElementById('pos').innerHTML = 'Current position :' + out.position;
+
+	
+	console.log('Checkout this JSON! ', out);
+})
+.catch(err => { throw err });
+			
+			
+			
+			
+			
+            d3.text("mac_signals.csv", function(data) {
+                var parsedCSV = d3.csv.parseRows(data);
+				//parsedCSV.sort(function(a, b){
+				//	var c = new Date(a.date);
+				//	var d = new Date(b.date);
+				//	return c-d;
+				//});
+				
+                var container = d3.select("body")
+                    .append("table")
+
+                    .selectAll("tr")
+                        .data(parsedCSV).enter()
+                        .append("tr")
+
+                    .selectAll("td")
+                        .data(function(d) { return d; }).enter()
+                        .append("td")
+                        .text(function(d) { return d; });
+            });
+          </script>
+
+
+</body>
+</html>
