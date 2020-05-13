@@ -10,18 +10,18 @@ import numpy as np
 import pandas as pd
 from enum import Enum
 
-buy_from_neutral = 0.0050
+buy_from_neutral = 0.0025
 sell_from_long = 0.0002
 
 buy_from_short = -0.0002
-sell_from_neutral = -0.0050
+sell_from_neutral = -0.0025
 
 timeframe = '1m'
 pairs = ['BTC/USDT']
 size = 0.01
 
 live_trading = True
-bot_name = 'mac'
+bot_name = 'dep'
 
 if sys.platform == 'win32':
     key_file = 'API_key.json'
@@ -33,6 +33,7 @@ else:
     excel_file = '/var/www/html/'+ bot_name +'_mkt_data.xlsx'
     position_file = '/var/www/html/'+ bot_name +'_position.json'
     filename = '/var/www/html/'+ bot_name +'_signals.csv'
+
 
 class TradeAction(Enum):
     BUY_FROM_NEUTRAL = 1
@@ -131,7 +132,7 @@ for e in exchanges:
         trades_buy = df_trades[df_trades['side'] == "buy"]['amount'].sum()
         trades_sell = df_trades[df_trades['side'] == "sell"]['amount'].sum()
         
-       #print(df_trades)
+        print(df_trades)
 
         cols = ['datetime','open','high','low','close','volume']
         
@@ -147,19 +148,6 @@ for e in exchanges:
         df_ohlcv['EWMA_90'] = df_ohlcv['close'].ewm(com=0.9).mean()  
         df_ohlcv['EWMA_60'] = df_ohlcv['close'].ewm(com=0.6).mean()
 
-
-        df_ohlcv['WA26'] = df_ohlcv['close'].rolling(26).mean() 
-        df_ohlcv['WA14'] = df_ohlcv['close'].rolling(12).mean()
-        df_ohlcv['WA14_EW'] = df_ohlcv['close'].ewm(com=0.9).mean()
-        
-        df_ohlcv['Diff_12_26'] = df_ohlcv['WA14'] - df_ohlcv['WA26'] 
-
-        df_ohlcv['Diff_WA'] = df_ohlcv['Diff_12_26'].rolling(9).mean() 
-        df_ohlcv['Diff_WA_EW'] = df_ohlcv['Diff_12_26'].rolling(9).mean()
-
-        df_ohlcv['MACD_Raw_Signal'] =  df_ohlcv['Diff_12_26'] - df_ohlcv['Diff_WA']
-        df_ohlcv['MACD_Signal'] = df_ohlcv['MACD_Raw_Signal']/10000
-
         df_ohlcv['EWMA'] = df_ohlcv['close'].ewm(com=0.8).mean()   
         df_ohlcv['trade_time'] = df_ohlcv.apply(lambda x: get_time(x['datetime']), axis=1)
 
@@ -173,9 +161,9 @@ for e in exchanges:
         df_ohlcv['buy_at'] = df_ohlcv.apply(lambda x: buy_at(x['trade'],ask), axis=1)
         df_ohlcv['sell_at'] = df_ohlcv.apply(lambda x: sell_at(x['trade'],bid), axis=1)
 
-        #print(df_ohlcv[['close','trade','signal_EWMA','signal_RSI','signal']].tail(10))
+        print(df_ohlcv[['close','trade','signal_EWMA','signal_RSI','signal']].tail(10))
                 
-        last_row = df_ohlcv[['MACD_Raw_Signal','Diff_12_26','MACD_Signal','close','RSI_10m','RSI_60m','EWMA','trade','buy_at','sell_at','signal','signal_EWMA','signal_RSI','high','low']].tail(1)
+        last_row = df_ohlcv[['close','RSI_10m','RSI_60m','EWMA','trade','buy_at','sell_at','signal','signal_EWMA','signal_RSI','high','low']].tail(1)
 
         close = float(last_row['close'].values[0])
         EWMA = float(last_row[['EWMA']].values[0])
@@ -189,12 +177,8 @@ for e in exchanges:
         trade  =  last_row['close'].values[0]
         high_px  =  last_row['high'].values[0]
         low_px =  last_row['low'].values[0]
-        signal = last_row['MACD_Signal'].values[0]
 
-        Diff_12_26 = float(last_row['Diff_12_26'].values[0])
-        MACD_Raw_Signal = float(last_row['MACD_Raw_Signal'].values[0])
-        
-        #signal = (0.45 * signal_EWMA) + (0.45 * signal_RSI) + (0.05 * signal_OB) + (0.05 * signal_trade_imb)
+        signal = (0.3 * signal_EWMA) + (0.3 * signal_RSI) + (0.2 * signal_OB) + (0.2 * signal_trade_imb)
         
         execution = "Trading off..."
         lastb_buy_px = float(pos['lastb_buy_px'])
@@ -269,10 +253,10 @@ for e in exchanges:
                     position = "short"
                     pos_ls = -1
 
-        # print("signal EWMA:",signal_EWMA)
-        # print("signal RSI:",signal_RSI)
-        # print("signal trade imbalance:",signal_trade_imb)
-        # print("signal OB:",signal_OB)
+        print("signal EWMA:",signal_EWMA)
+        print("signal RSI:",signal_RSI)
+        print("signal trade imbalance:",signal_trade_imb)
+        print("signal OB:",signal_OB)
         #print("signal OB 1 pct:",signal_OB_1_pct)
         print("signal (final):",signal)
         print("Action :" ,execution)
@@ -288,7 +272,7 @@ for e in exchanges:
             'lastb_buy_px' : lastb_buy_px,
             'lastb_sell_px' : lastb_sell_px,
             'running_pnl' : running_pnl,
-            'long_name' : 'MACD',
+            'long_name' : 'Depisteur',
             'prev_EWMA' : signal_EWMA,
             'prev_RSI' : signal_RSI,
             'prev_OB' : signal_OB,
@@ -302,14 +286,14 @@ for e in exchanges:
         file1 = open(filename,"a")
 
         if not file_exists:
-            file1.writelines('timedate,bid_1,ask_1,RSI,EWMA,trade,buy_at,sell_at,Signal,Diff_12_26,MACD_Raw_Signal,Last Trade,EWMA Signal,RSI Signal,Total Volume,bid_5,ask_5,OB Signal,Trade Bal Signal,Trade_PnL,Trade_Cost,Amount,Running PnL,pos_ls'+ "\n")
+            file1.writelines('timedate,bid_1,ask_1,RSI,EWMA,trade,buy_at,sell_at,Signal,bid_sum,ask_sum,Last Trade,EWMA Signal,RSI Signal,Total Volume,bid_5,ask_5,OB Signal,Trade Bal Signal,Trade_PnL,Trade_Cost,Amount,Running PnL,pos_ls'+ "\n")
             pos['running_pnl'] = 100
             running_pnl = 100
 
         file1.writelines(datestr  + ',' + str(orderbook['bids'][0][0]) + ',' + str(orderbook['asks'][0][0]) + ',' 
             + str(round(RSI,0)) + ',' +  str(round(EWMA,2)) + ','
             + str(execution) +  ',' + str(buy_price) + ',' + str(sell_price) + ',' + '{x:.4%}'.format(x=signal) 
-            + ',' + str(round(Diff_12_26,2)) + ',' + str(round(MACD_Raw_Signal,2))  + ',' + str(trade)
+            + ',' + str(round(bid_sum,2)) + ',' + str(round(ask_sum,2))  + ',' + str(trade)
             + ',' + '{x:.4%}'.format(x=signal_EWMA) + ',' + '{x:.4%}'.format(x=signal_RSI)
             + ',' + str(round(total_volume,2)) + ',' + str(orderbook['bids'][99][0]) + ',' + str(orderbook['asks'][99][0]) 
             + ',' + '{x:.4%}'.format(x=signal_OB)
