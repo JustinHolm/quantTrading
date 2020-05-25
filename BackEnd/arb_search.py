@@ -45,33 +45,13 @@ else:
     position_file = '/var/www/html/'+ bot_name +'_position.json'
     filename = '/var/www/html/'+ bot_name +'_signals.csv'
 
-pairs = ['BTC/USDT']
-pairs = ['ADA/USDT','AION/USDT','ALGO/USDT','ANKR/USDT','ARPA/USDT','ATOM/USDT','BAND/USDT','BAT/USDT',
-         'BCH/USDT','BEAM/USDT','BEAR/USDT','BNB/USDT','BNT/USDT','BSV/USDT','BTC/USDT',
-         'BTCUP/USDT','BTS/USDT','BTT/USDT','BULL/USDT','BUSD/USDT','CELR/USDT','CHR/USDT',
-         'CHZ/USDT','COCOS/USDT','COS/USDT','COTI/USDT','CTSI/USDT','CTXC/USDT','CVC/USDT',
-         'DASH/USDT','DATA/USDT','DENT/USDT','DOCK/USDT','DOGE/USDT','DREP/USDT','DUSK/USDT',
-         'ENJ/USDT','EOS/USDT','ERD/USDT','ETC/USDT','ETH/USDT','EUR/USDT','FET/USDT',
-         'FTM/USDT','FTT/USDT','FUN/USDT','GTO/USDT','HBAR/USDT','HC/USDT','HIVE/USDT',
-         'HOT/USDT','ICX/USDT','IOST/USDT','IOTA/USDT','IOTX/USDT','KAVA/USDT','KEY/USDT',
-         'LINK/USDT','LSK/USDT','LTC/USDT','LTO/USDT','MATIC/USDT','MBL/USDT','MCO/USDT',
-         'MFT/USDT','MITH/USDT','MTL/USDT','NANO/USDT','NEO/USDT','NKN/USDT','NPXS/USDT',
-         'NULS/USDT','OGN/USDT','OMG/USDT','ONE/USDT','ONG/USDT','ONT/USDT','PAX/USDT','PERL/USDT',
-         'QTUM/USDT','REN/USDT','RLC/USDT','RVN/USDT','STORM/USDT','STPT/USDT','STRAT/USDT','STX/USDT',
-         'TCT/USDT','TFUEL/USDT','THETA/USDT','TOMO/USDT','TROY/USDT','TRX/USDT','TUSD/USDT',
-         'USDC/USDT','USDS/USDT','USDSB/USDT','VEN/USDT','VET/USDT','VITE/USDT','WAN/USDT',
-         'WAVES/USDT','WIN/USDT','WRX/USDT','WTC/USDT','XLM/USDT','XMR/USDT','XRP/USDT',
-         'XTZ/USDT','XZC/USDT','ZEC/USDT','ZIL/USDT','ZRX/USDT'
-]
 pairs = ['BTS/USDT','DASH/USDT','DATA/USDT','DENT/USDT','DOCK/USDT','STORM/USDT','DREP/USDT','FTT/USDT',
          'TROY/USDT','FTM/USDT','THETA/USDT','MCO/USDT','BEAM/USDT','OMG/USDT','QTUM/USDT','IOST/USDT',
          'RVN/USDT','OGN/USDT','ALGO/USDT','WRX/USDT','ICX/USDT','XMR/USDT','AION/USDT','ONT/USDT','ZEC/USDT',
          'HC/USDT','XZC/USDT','VET/USDT','ADA/USDT','MATIC/USDT','ATOM/USDT']
 
 exchanges = loadExchanges()
-
 writer = pd.ExcelWriter('arb_search.xlsx')
-
 column_list =['pair','min_stale','signal','st_dev','price','fv','bid','ask','r2','beta']
 df_output = pd.DataFrame(columns=column_list)
 
@@ -159,7 +139,7 @@ for e in exchanges:
          
         df_output = df_output.append(output_dict, ignore_index=True)
 
-        if graph == True:
+        if graph == False:
             df_graph = ARB_1m_ohlcv[['trade_time_BTC','close_BTC','close_' + pair,'volume_' + pair]].tail(min_stale+90)
             row_indexes = df_graph[df_graph['trade_time_BTC'] >= last_trade_min].index
             BTC_start = df_graph[df_graph['trade_time_BTC'] == last_trade_min].to_numpy()[0][1]
@@ -195,4 +175,3 @@ for e in exchanges:
             file1.close()
 
 writer.save()
-df_output
