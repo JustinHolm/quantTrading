@@ -34,7 +34,6 @@ else:
     position_file = '/var/www/html/'+ bot_name +'_position.json'
     filename = '/var/www/html/'+ bot_name +'_signals.csv'
 
-
 class TradeAction(Enum):
     BUY_FROM_NEUTRAL = 1
     SELL_FROM_NEUTRAL = 2
